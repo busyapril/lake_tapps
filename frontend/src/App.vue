@@ -423,8 +423,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from './supabase'
 import dayjs from 'dayjs'
+import minMax from 'dayjs/plugin/minMax'
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
+
+dayjs.extend(minMax)
+dayjs.extend(isSameOrAfter)
 
 // Data validation helpers
 const isValidHexColor = (color) => /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)
@@ -784,7 +789,7 @@ export default {
         section: sections.value.length > 0 ? sections.value[0].id : '__new__',
         newSectionName: '',
         color: '#666666',
-        row_index: null
+        row_index: 1
       }
       showModal.value = true
     }
@@ -799,7 +804,7 @@ export default {
         section: sections.value.length > 0 ? sections.value[0].id : '__new__',
         newSectionName: '',
         color: '#4CAF50',
-        row_index: null
+        row_index: 1
       }
       showModal.value = true
     }
@@ -812,7 +817,7 @@ export default {
         startDate: dayjs().format('YYYY-MM-DD'),
         section: sections.value.length > 0 ? sections.value[0].id : '__new__',
         newSectionName: '',
-        row_index: null,
+        row_index: 1,
         fontSize: 'medium',
         bold: false,
         italic: false,
@@ -1493,14 +1498,6 @@ export default {
         const ganttWrapper = document.querySelector('.gantt-chart-wrapper');
         const cornerCellWidth = document.querySelector('.corner-cell')?.offsetWidth || 0;
 
-        // Calculate the pixel offset from the chart's overall start date to the effective start date
-        const startDayOffset = effectiveStartDate.diff(startDate.value, 'day');
-        const captureX = cornerCellWidth + (startDayOffset * dayWidth.value);
-
-        // Calculate the pixel width of the effective date range
-        const durationDays = effectiveEndDate.diff(effectiveStartDate, 'day') + 1;
-        const captureWidth = durationDays * dayWidth.value;
-
         // Hide UI elements for capture
         const controlsPanel = document.querySelector('.controls-panel')
         const projectFilter = document.querySelector('.project-filter')
@@ -1544,6 +1541,44 @@ export default {
           for (let i = 0; i < visibleSections.length; i++) {
             if (i > 0) pdf.addPage([pageW, pageH], isLandscape ? 'landscape' : 'portrait')
 
+            const currentSectionEl = visibleSections[i]
+            const sectionName = currentSectionEl.querySelector('.section-title-text')?.textContent.trim()
+            const sectionData = allSections.value.find(s => s.name === sectionName)
+
+            // Calculate independent date range for this section
+            let sectionMinDate = effectiveStartDate;
+            let sectionMaxDate = effectiveEndDate;
+
+            if (sectionData) {
+              const taskDates = []
+              sectionData.rows.forEach(row => {
+                row.tasks.forEach(task => {
+                  taskDates.push(dayjs(task.start_date))
+                  taskDates.push(dayjs(task.end_date))
+                })
+              })
+
+              if (taskDates.length > 0) {
+                // Use minMax plugin
+                const minTaskDate = dayjs.min(taskDates)
+                const maxTaskDate = dayjs.max(taskDates)
+                sectionMinDate = minTaskDate.subtract(2, 'day')
+                sectionMaxDate = maxTaskDate.add(2, 'day')
+                
+                // Ensure we don't go outside the overall project range if custom range is set
+                if (printForm.value.dateRangeMode === 'custom') {
+                  if (sectionMinDate.isBefore(effectiveStartDate)) sectionMinDate = effectiveStartDate
+                  if (sectionMaxDate.isAfter(effectiveEndDate)) sectionMaxDate = effectiveEndDate
+                }
+              }
+            }
+
+            // Calculate capture area for this specific section
+            const startDayOffset = sectionMinDate.diff(startDate.value, 'day')
+            const captureX = cornerCellWidth + (startDayOffset * dayWidth.value)
+            const durationDays = sectionMaxDate.diff(sectionMinDate, 'day') + 1
+            const captureWidth = durationDays * dayWidth.value
+
             // Temporarily hide other sections to capture just this one
             const otherSections = visibleSections.filter((_, idx) => idx !== i)
             otherSections.forEach(s => s.style.display = 'none')
@@ -1575,6 +1610,11 @@ export default {
           }
         } else {
           // Continuous — capture entire visible chart as one image
+          const startDayOffset = effectiveStartDate.diff(startDate.value, 'day')
+          const captureX = cornerCellWidth + (startDayOffset * dayWidth.value)
+          const durationDays = effectiveEndDate.diff(effectiveStartDate, 'day') + 1
+          const captureWidth = durationDays * dayWidth.value
+
           const canvas = await html2canvas(ganttWrapper, {
             scale: 2,
             useCORS: true,
