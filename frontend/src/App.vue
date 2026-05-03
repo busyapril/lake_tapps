@@ -1636,11 +1636,11 @@ export default {
             const scaleW = usableW / (imgW / DPI / 2)
             const scaleH = usableH / (imgH / DPI / 2)
             
-            let scaleToFit = 1;
+            let scaleToFit;
             if (printForm.value.autoFit) {
               scaleToFit = Math.min(scaleW, scaleH);
             } else {
-              scaleToFit = Math.min(1, scaleW); // Only scale down if too wide
+              scaleToFit = scaleW; // Always fit to page width (scales up or down)
             }
 
             const finalW = (imgW / DPI / 2) * scaleToFit
@@ -1673,11 +1673,11 @@ export default {
           const scaleW = usableW / (imgW / DPI / 2)
           const scaleH = usableH / (imgH / DPI / 2)
           
-          let scaleToFit = 1;
+          let scaleToFit;
           if (printForm.value.autoFit) {
             scaleToFit = Math.min(scaleW, scaleH);
           } else {
-            scaleToFit = Math.min(1, scaleW);
+            scaleToFit = scaleW; // Always fit to page width (scales up or down)
           }
 
           const finalW = (imgW / DPI / 2) * scaleToFit
@@ -1769,7 +1769,7 @@ export default {
       const usablePageHeight = (pageH - 2 * marginInches) * DPI;
       const ganttWrapper = document.querySelector('.gantt-chart-wrapper');
       let scaleFactor = 1;
-      
+
       if (ganttWrapper) {
         let contentWidth = ganttWrapper.scrollWidth;
         let contentHeight = ganttWrapper.scrollHeight;
@@ -1780,21 +1780,21 @@ export default {
           const durationDays = endDay.diff(startDay, 'day') + 1;
           contentWidth = (durationDays * dayWidth.value) + cornerCellWidth;
         }
-        
+
         const scaleW = usablePageWidth / contentWidth;
-        
+        const scaleH = usablePageHeight / contentHeight;
+
         if (printForm.value.autoFit) {
-          // Fill page width primarily, as vertical content can flow to next pages
-          scaleFactor = scaleW;
-        } else if (contentWidth > usablePageWidth) {
-          // Standard: only scale down to fit width
+          // Fit both dimensions so the entire chart lands on one page
+          scaleFactor = Math.min(scaleW, scaleH);
+        } else {
+          // Always scale to fill page width (up or down)
           scaleFactor = scaleW;
         }
       }
 
-      // Add a small buffer to ensure it fills the page properly
-      // (Browsers sometimes have inconsistent margin handling)
-      scaleFactor = scaleFactor * 0.98;
+      // Small buffer so rounding never clips the right edge
+      scaleFactor = scaleFactor * 0.97;
 
       // Handle custom date range for direct print
       let dateFilterCSS = '';
@@ -1832,7 +1832,7 @@ export default {
         }
         @media print {
           body {
-            width: ${pageW}in !important;
+            width: ${pageW - 2 * marginInches}in !important;
             margin: 0 !important;
             padding: 0 !important;
             overflow: visible !important;
@@ -1840,7 +1840,7 @@ export default {
             print-color-adjust: exact;
           }
           .gantt-container {
-            width: ${pageW}in !important;
+            width: ${pageW - 2 * marginInches}in !important;
             margin: 0 !important;
             padding: 0 !important;
             overflow: visible !important;
@@ -1848,16 +1848,14 @@ export default {
           }
           .gantt-chart-wrapper {
             width: 100% !important;
-            min-width: 100% !important;
+            min-width: unset !important;
             overflow: visible !important;
           }
           .section-group[data-print-hide="true"] { display: none !important; }
           ${paginationCSS}
           ${dateFilterCSS}
           .print-scale-container {
-            transform: scale(${scaleFactor});
-            transform-origin: top left;
-            width: ${100 / scaleFactor}% !important;
+            zoom: ${scaleFactor};
           }
         }
       `
